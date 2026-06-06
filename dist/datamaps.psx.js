@@ -1,7 +1,7 @@
 (function() {
   var svg;
 
-  //save off default references
+  // Save off default references
   var d3 = window.d3, topojson = window.topojson;
 
   var defaultOptions = {
@@ -22,6 +22,7 @@
         hideAntarctica: true,
         hideHawaiiAndAlaska : false,
         borderWidth: 1,
+        borderOpacity: 1,
         borderColor: '#FDFDFD',
         popupTemplate: function(geography, data) {
           return '<div class="hoverinfo"><strong>' + geography.properties.name + '</strong></div>';
@@ -30,13 +31,15 @@
         highlightOnHover: true,
         highlightFillColor: '#FC8D59',
         highlightBorderColor: 'rgba(250, 15, 160, 0.2)',
-        highlightBorderWidth: 2
+        highlightBorderWidth: 2,
+        highlightBorderOpacity: 1
     },
     projectionConfig: {
       rotation: [97, 0]
     },
     bubblesConfig: {
         borderWidth: 2,
+        borderOpacity: 1,
         borderColor: '#FFFFFF',
         popupOnHover: true,
         radius: null,
@@ -49,6 +52,7 @@
         highlightFillColor: '#FC8D59',
         highlightBorderColor: 'rgba(250, 15, 160, 0.2)',
         highlightBorderWidth: 2,
+        highlightBorderOpacity: 1,
         highlightFillOpacity: 0.85,
         exitDelay: 100,
         key: JSON.stringify
@@ -57,7 +61,22 @@
       strokeColor: '#DD1C77',
       strokeWidth: 1,
       arcSharpness: 1,
-      animationSpeed: 600
+      animationSpeed: 600,
+      popupOnHover: false,
+      popupTemplate: function(geography, data) {
+        // Case with latitude and longitude
+        if ( ( data.origin && data.destination ) && data.origin.latitude && data.origin.longitude && data.destination.latitude && data.destination.longitude ) {
+          return '<div class="hoverinfo"><strong>Arc</strong><br>Origin: ' + JSON.stringify(data.origin) + '<br>Destination: ' + JSON.stringify(data.destination) + '</div>';
+        }
+        // Case with only country name
+        else if ( data.origin && data.destination ) {
+          return '<div class="hoverinfo"><strong>Arc</strong><br>' + data.origin + ' -> ' + data.destination + '</div>';
+        }
+        // Missing information
+        else {
+          return '';
+        }
+      }
     }
   };
 
@@ -153,7 +172,7 @@
   function addStyleBlock() {
     if ( d3.select('.datamaps-style-block').empty() ) {
       d3.select('head').append('style').attr('class', 'datamaps-style-block')
-      .html('.datamap path.datamaps-graticule { fill: none; stroke: #777; stroke-width: 0.5px; stroke-opacity: .5; pointer-events: none; } .datamap .labels {pointer-events: none;} .datamap path {stroke: #FFFFFF; stroke-width: 1px;} .datamaps-legend dt, .datamaps-legend dd { float: left; margin: 0 3px 0 0;} .datamaps-legend dd {width: 20px; margin-right: 6px; border-radius: 3px;} .datamaps-legend {padding-bottom: 20px; z-index: 1001; position: absolute; left: 4px; font-size: 12px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;} .datamaps-hoverover {display: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .hoverinfo {padding: 4px; border-radius: 1px; background-color: #FFF; box-shadow: 1px 1px 5px #CCC; font-size: 12px; border: 1px solid #CCC; } .hoverinfo hr {border:1px dotted #CCC; }');
+      .html('.datamap path.datamaps-graticule { fill: none; stroke: #777; stroke-width: 0.5px; stroke-opacity: .5; pointer-events: none; } .datamap .labels {pointer-events: none;} .datamap path:not(.datamaps-arc), .datamap circle, .datamap line {stroke: #FFFFFF; vector-effect: non-scaling-stroke; stroke-width: 1px;} .datamaps-legend dt, .datamaps-legend dd { float: left; margin: 0 3px 0 0;} .datamaps-legend dd {width: 20px; margin-right: 6px; border-radius: 3px;} .datamaps-legend {padding-bottom: 20px; z-index: 1001; position: absolute; left: 4px; font-size: 12px; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;} .datamaps-hoverover {display: none; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .hoverinfo {padding: 4px; border-radius: 1px; background-color: #FFF; box-shadow: 1px 1px 5px #CCC; font-size: 12px; border: 1px solid #CCC; } .hoverinfo hr {border:1px dotted #CCC; }');
     }
   }
 
@@ -161,7 +180,6 @@
     var fillData = this.options.fills,
         colorCodeData = this.options.data || {},
         geoConfig = this.options.geographyConfig;
-
 
     var subunits = this.svg.select('g.datamaps-subunits');
     if ( subunits.empty() ) {
@@ -193,9 +211,9 @@
         return JSON.stringify( colorCodeData[d.id]);
       })
       .style('fill', function(d) {
-        //if fillKey - use that
-        //otherwise check 'fill'
-        //otherwise check 'defaultFill'
+        // If fillKey - use that
+        // Otherwise check 'fill'
+        // Otherwise check 'defaultFill'
         var fillColor;
 
         var datum = colorCodeData[d.id];
@@ -210,6 +228,7 @@
         return fillColor;
       })
       .style('stroke-width', geoConfig.borderWidth)
+      .style('stroke-opacity', geoConfig.borderOpacity)
       .style('stroke', geoConfig.borderColor);
   }
 
@@ -218,6 +237,12 @@
     var svg = this.svg;
     var self = this;
     var options = this.options.geographyConfig;
+
+    var overlayLayer = svg.select('g.datamaps-subunits');
+    var hoverStrokePath = overlayLayer.append('path')
+      .attr('class', 'datamaps-hover-stroke')
+      .style('fill', 'none')
+      .style('pointer-events', 'none');
 
     if ( options.highlightOnHover || options.popupOnHover ) {
       svg.selectAll('.datamaps-subunit')
@@ -231,18 +256,17 @@
               'stroke-width': $this.style('stroke-width'),
               'fill-opacity': $this.style('fill-opacity')
             };
+            $this.attr('data-previousAttributes', JSON.stringify(previousAttributes))
 
             $this
               .style('fill', val(datum.highlightFillColor, options.highlightFillColor, datum))
+              .style('fill-opacity', val(datum.highlightFillOpacity, options.highlightFillOpacity, datum));
+
+            hoverStrokePath
+              .attr('d', self.path(d))
               .style('stroke', val(datum.highlightBorderColor, options.highlightBorderColor, datum))
               .style('stroke-width', val(datum.highlightBorderWidth, options.highlightBorderWidth, datum))
-              .style('fill-opacity', val(datum.highlightFillOpacity, options.highlightFillOpacity, datum))
-              .attr('data-previousAttributes', JSON.stringify(previousAttributes));
-
-            //as per discussion on https://github.com/markmarkoh/datamaps/issues/19
-            if ( ! /((MSIE)|(Trident))/.test(navigator.userAgent) ) {
-             moveToFront.call(this);
-            }
+              .style('stroke-opacity', val(datum.highlightBorderOpacity, options.highlightBorderOpacity, datum))
           }
 
           if ( options.popupOnHover ) {
@@ -253,23 +277,21 @@
           var $this = d3.select(this);
 
           if (options.highlightOnHover) {
-            //reapply previous attributes
+            // Reapply previous attributes
             var previousAttributes = JSON.parse( $this.attr('data-previousAttributes') );
             for ( var attr in previousAttributes ) {
               $this.style(attr, previousAttributes[attr]);
             }
+            hoverStrokePath.attr('d', null);
           }
           $this.on('mousemove', null);
           d3.selectAll('.datamaps-hoverover').style('display', 'none');
         });
     }
 
-    function moveToFront() {
-      this.parentNode.appendChild(this);
-    }
   }
 
-  //plugin to add a simple map legend
+  // Plugin to add a simple map legend
   function addLegend(layer, data, options) {
     data = data || {};
     if ( !this.options.fills ) {
@@ -351,8 +373,80 @@
             return val(datum.strokeWidth, options.strokeWidth, datum);
         })
         .attr('d', function(datum) {
-            var originXY = self.latLngToXY(val(datum.origin.latitude, datum), val(datum.origin.longitude, datum))
-            var destXY = self.latLngToXY(val(datum.destination.latitude, datum), val(datum.destination.longitude, datum));
+
+            var originXY, destXY;
+
+            if (typeof datum.origin === "string") {
+              switch (datum.origin) {
+                   case "CAN":
+                       originXY = self.latLngToXY(56.624472, -114.665293);
+                       break;
+                   case "CHL":
+                       originXY = self.latLngToXY(-33.448890, -70.669265);
+                       break;
+                   case "HRV":
+                       originXY = self.latLngToXY(45.815011, 15.981919);
+                       break;
+                   case "IDN":
+                       originXY = self.latLngToXY(-6.208763, 106.845599);
+                       break;
+                   case "JPN":
+                       originXY = self.latLngToXY(35.689487, 139.691706);
+                       break;
+                   case "MYS":
+                       originXY = self.latLngToXY(3.139003, 101.686855);
+                       break;
+                   case "NOR":
+                       originXY = self.latLngToXY(59.913869, 10.752245);
+                       break;
+                   case "USA":
+                       originXY = self.latLngToXY(41.140276, -100.760145);
+                       break;
+                   case "VNM":
+                       originXY = self.latLngToXY(21.027764, 105.834160);
+                       break;
+                   default:
+                       originXY = self.path.centroid(svg.select('path.' + datum.origin).data()[0]);
+               }
+            } else {
+              originXY = self.latLngToXY(val(datum.origin.latitude, datum), val(datum.origin.longitude, datum))
+            }
+
+            if (typeof datum.destination === 'string') {
+              switch (datum.destination) {
+                    case "CAN":
+                        destXY = self.latLngToXY(56.624472, -114.665293);
+                        break;
+                    case "CHL":
+                        destXY = self.latLngToXY(-33.448890, -70.669265);
+                        break;
+                    case "HRV":
+                        destXY = self.latLngToXY(45.815011, 15.981919);
+                        break;
+                    case "IDN":
+                        destXY = self.latLngToXY(-6.208763, 106.845599);
+                        break;
+                    case "JPN":
+                        destXY = self.latLngToXY(35.689487, 139.691706);
+                        break;
+                    case "MYS":
+                        destXY = self.latLngToXY(3.139003, 101.686855);
+                        break;
+                    case "NOR":
+                        destXY = self.latLngToXY(59.913869, 10.752245);
+                        break;
+                    case "USA":
+                        destXY = self.latLngToXY(41.140276, -100.760145);
+                        break;
+                    case "VNM":
+                        destXY = self.latLngToXY(21.027764, 105.834160);
+                        break;
+                    default:
+                        destXY = self.path.centroid(svg.select('path.' + datum.destination).data()[0]);
+              }
+            } else {
+              destXY = self.latLngToXY(val(datum.destination.latitude, datum), val(datum.destination.longitude, datum));
+            }
             var midXY = [ (originXY[0] + destXY[0]) / 2, (originXY[1] + destXY[1]) / 2];
             if (options.greatArc) {
                   // TODO: Move this to inside `if` clause when setting attr `d`
@@ -364,6 +458,21 @@
             }
             var sharpness = val(datum.arcSharpness, options.arcSharpness, datum);
             return "M" + originXY[0] + ',' + originXY[1] + "S" + (midXY[0] + (50 * sharpness)) + "," + (midXY[1] - (75 * sharpness)) + "," + destXY[0] + "," + destXY[1];
+        })
+        .attr('data-info', function(datum) {
+          return JSON.stringify(datum);
+        })
+        .on('mouseover', function ( datum ) {
+          var $this = d3.select(this);
+
+          if (options.popupOnHover) {
+            self.updatePopup($this, datum, options, svg);
+          }
+        })
+        .on('mouseout', function ( datum ) {
+          var $this = d3.select(this);
+
+          d3.selectAll('.datamaps-hoverover').style('display', 'none');
         })
         .transition()
           .delay(100)
@@ -395,6 +504,9 @@
     this.svg.selectAll(".datamaps-subunit")
       .attr("data-foo", function(d) {
         var center = self.path.centroid(d);
+        if ( d.properties.iso === 'USA' ) {
+            center = self.projection([-98.58333, 39.83333])
+        }
         var xOffset = 7.5, yOffset = 5;
 
         if ( ["FL", "KY", "MI"].indexOf(d.id) > -1 ) xOffset = -2.5;
@@ -421,13 +533,20 @@
             .style("stroke-width", options.lineWidth || 1)
         }
 
-        layer.append("text")
-          .attr("x", x)
-          .attr("y", y)
-          .style("font-size", (options.fontSize || 10) + 'px')
-          .style("font-family", options.fontFamily || "Verdana")
-          .style("fill", options.labelColor || "#000")
-          .text( d.id );
+          layer.append("text")
+              .attr("x", x)
+              .attr("y", y)
+              .style("font-size", (options.fontSize || 10) + 'px')
+              .style("font-family", options.fontFamily || "Verdana")
+              .style("fill", options.labelColor || "#000")
+              .text(function() {
+                  if (options.customLabelText && options.customLabelText[d.id]) {
+                      return options.customLabelText[d.id]
+                  } else {
+                      return d.id
+                  }
+              });
+
         return "bar";
       });
   }
@@ -455,7 +574,11 @@
             latLng = self.latLngToXY(datum.latitude, datum.longitude);
           }
           else if ( datum.centered ) {
-            latLng = self.path.centroid(svg.select('path.' + datum.centered).data()[0]);
+            if ( datum.centered === 'USA' ) {
+              latLng = self.projection([-98.58333, 39.83333])
+            } else {
+              latLng = self.path.centroid(svg.select('path.' + datum.centered).data()[0]);
+            }
           }
           if ( latLng ) return latLng[0];
         })
@@ -465,16 +588,20 @@
             latLng = self.latLngToXY(datum.latitude, datum.longitude);
           }
           else if ( datum.centered ) {
-            latLng = self.path.centroid(svg.select('path.' + datum.centered).data()[0]);
+            if ( datum.centered === 'USA' ) {
+              latLng = self.projection([-98.58333, 39.83333])
+            } else {
+              latLng = self.path.centroid(svg.select('path.' + datum.centered).data()[0]);
+            }
           }
           if ( latLng ) return latLng[1];
         })
         .attr('r', function(datum) {
-          // if animation enabled start with radius 0, otherwise use full size.
+          // If animation enabled start with radius 0, otherwise use full size.
           return options.animate ? 0 : val(datum.radius, options.radius, datum);
         })
-        .attr('data-info', function(d) {
-          return JSON.stringify(d);
+        .attr('data-info', function(datum) {
+          return JSON.stringify(datum);
         })
         .attr('filter', function (datum) {
           var filterKey = filterData[ val(datum.filterKey, options.filterKey, datum) ];
@@ -489,6 +616,9 @@
         .style('stroke-width', function ( datum ) {
           return val(datum.borderWidth, options.borderWidth, datum);
         })
+        .style('stroke-opacity', function ( datum ) {
+          return val(datum.borderOpacity, options.borderOpacity, datum);
+        })
         .style('fill-opacity', function ( datum ) {
           return val(datum.fillOpacity, options.fillOpacity, datum);
         })
@@ -500,7 +630,7 @@
           var $this = d3.select(this);
 
           if (options.highlightOnHover) {
-            //save all previous attributes for mouseout
+            // Save all previous attributes for mouseout
             var previousAttributes = {
               'fill':  $this.style('fill'),
               'stroke': $this.style('stroke'),
@@ -512,6 +642,7 @@
               .style('fill', val(datum.highlightFillColor, options.highlightFillColor, datum))
               .style('stroke', val(datum.highlightBorderColor, options.highlightBorderColor, datum))
               .style('stroke-width', val(datum.highlightBorderWidth, options.highlightBorderWidth, datum))
+              .style('stroke-opacity', val(datum.highlightBorderOpacity, options.highlightBorderOpacity, datum))
               .style('fill-opacity', val(datum.highlightFillOpacity, options.highlightFillOpacity, datum))
               .attr('data-previousAttributes', JSON.stringify(previousAttributes));
           }
@@ -524,7 +655,7 @@
           var $this = d3.select(this);
 
           if (options.highlightOnHover) {
-            //reapply previous attributes
+            // Reapply previous attributes
             var previousAttributes = JSON.parse( $this.attr('data-previousAttributes') );
             for ( var attr in previousAttributes ) {
               $this.style(attr, previousAttributes[attr]);
@@ -538,6 +669,11 @@
       .duration(400)
       .attr('r', function ( datum ) {
         return val(datum.radius, options.radius, datum);
+      })
+    .transition()
+      .duration(0)
+      .attr('data-info', function(d) {
+        return JSON.stringify(d);
       });
 
     bubbles.exit()
@@ -551,12 +687,19 @@
     }
   }
 
-  //stolen from underscore.js
   function defaults(obj) {
     Array.prototype.slice.call(arguments, 1).forEach(function(source) {
       if (source) {
         for (var prop in source) {
-          if (obj[prop] == null) obj[prop] = source[prop];
+          // Deep copy if property not set
+          if (obj[prop] == null) {
+            if (typeof source[prop] == 'function') {
+              obj[prop] = source[prop];
+            }
+            else {
+              obj[prop] = JSON.parse(JSON.stringify(source[prop]));
+            }
+          }
         }
       }
     });
@@ -571,26 +714,26 @@
     if ( typeof d3 === 'undefined' || typeof topojson === 'undefined' ) {
       throw new Error('Include d3.js (v3.0.3 or greater) and topojson on this page before creating a new map');
    }
-    //set options for global use
+    // Set options for global use
     this.options = defaults(options, defaultOptions);
     this.options.geographyConfig = defaults(options.geographyConfig, defaultOptions.geographyConfig);
     this.options.projectionConfig = defaults(options.projectionConfig, defaultOptions.projectionConfig);
     this.options.bubblesConfig = defaults(options.bubblesConfig, defaultOptions.bubblesConfig);
     this.options.arcConfig = defaults(options.arcConfig, defaultOptions.arcConfig);
 
-    //add the SVG container
+    // Add the SVG container
     if ( d3.select( this.options.element ).select('svg').length > 0 ) {
       addContainer.call(this, this.options.element, this.options.height, this.options.width );
     }
 
-    /* Add core plugins to this instance */
+    // Add core plugins to this instance
     this.addPlugin('bubbles', handleBubbles);
     this.addPlugin('legend', addLegend);
     this.addPlugin('arc', handleArcs);
     this.addPlugin('labels', handleLabels);
     this.addPlugin('graticule', addGraticule);
 
-    //append style block with basic hoverover styles
+    // Append style block with basic hoverover styles
     if ( ! this.options.disableDefaultStyles ) {
       addStyleBlock();
     }
@@ -598,7 +741,7 @@
     return this.draw();
   }
 
-  // resize map
+  // Resize map
   Datamap.prototype.resize = function () {
 
     var self = this;
@@ -612,19 +755,19 @@
     }
   }
 
-  // actually draw the features(states & countries)
+  // Actually draw the features(states & countries)
   Datamap.prototype.draw = function() {
-    //save off in a closure
+    // Save off in a closure
     var self = this;
     var options = self.options;
 
-    //set projections and paths based on scope
-    var pathAndProjection = options.setProjection.apply(self, [options.element, options] );
+    // Set projections and paths based on scope
+    var pathAndProjection = options.setProjection.apply(this, [options.element, options] );
 
     this.path = pathAndProjection.path;
     this.projection = pathAndProjection.projection;
 
-    //if custom URL for topojson data, retrieve it and render
+    // If custom URL for topojson data, retrieve it and render
     if ( options.geographyConfig.dataUrl ) {
       d3.json( options.geographyConfig.dataUrl, function(error, results) {
         if ( error ) throw new Error(error);
@@ -639,11 +782,11 @@
     return this;
 
       function draw (data) {
-        // if fetching remote data, draw the map first then call `updateChoropleth`
+        // If fetching remote data, draw the map first then call `updateChoropleth`
         if ( self.options.dataUrl ) {
-          //allow for csv or json data types
+          // Allow for csv or json data types
           d3[self.options.dataType](self.options.dataUrl, function(data) {
-            //in the case of csv, transform data to object
+            // In the case of csv, transform data to object
             if ( self.options.dataType === 'csv' && (data && data.slice) ) {
               var tmpData = {};
               for(var i = 0; i < data.length; i++) {
@@ -664,7 +807,7 @@
             .style('position', 'absolute');
         }
 
-        //fire off finished callback
+        // Fire off finished callback
         self.options.done(self);
       }
   };
@@ -753,7 +896,7 @@
   Datamap.prototype.froTopo = '__FRO__';
   Datamap.prototype.fsmTopo = '__FSM__';
   Datamap.prototype.gabTopo = '__GAB__';
-  Datamap.prototype.psxTopo = {"type":"Topology","objects":{"psx":{"type":"GeometryCollection","geometries":[{"type":"Polygon","properties":{"name":"Gaza Strip"},"id":"PS","arcs":[[0]]},{"type":"Polygon","properties":{"name":"West Bank"},"id":"PS","arcs":[[1]]}]}},"arcs":[[[350,0],[-130,359],[-43,124],[-177,289],[163,93],[102,118],[326,258],[147,233],[341,225],[144,229],[548,499],[258,328],[18,37],[220,-162],[139,-152],[-16,-159],[-237,-194],[-2,0],[-110,-66],[-824,-697],[-156,-263],[-3,-128],[61,-258],[-21,-129],[-256,-243],[-375,-245],[-117,-96]],[[7360,9993],[97,-45],[208,-149],[133,-42],[458,20],[217,-22],[217,-118],[65,-176],[-3,-233],[40,-189],[189,-49],[174,-5],[171,-39],[589,-133],[21,-58],[13,-68],[-46,0],[0,51],[-54,0],[0,-51],[39,-73],[-6,-226],[67,-111],[-33,-88],[-2,-143],[27,-143],[58,-88],[-36,-18],[-28,-20],[-20,-28],[-12,-41],[96,0],[-95,-355],[-32,-120],[31,-89],[0,-56],[-59,-27],[-33,-34],[0,-40],[38,-48],[-122,-184],[-4,-87],[76,-93],[-122,-88],[-40,-130],[13,-346],[79,-176],[16,-80],[5,-103],[12,-62],[43,-83],[-6,-60],[-33,-35],[-50,-12],[-45,-23],[-21,-61],[178,-601],[-78,-93],[0,-56],[153,-405],[-232,-228],[-182,-373],[-163,-333],[-116,-545],[-40,-557],[2,-12],[1,-7],[-3,-2],[-5,3],[-495,-37],[-421,-212],[-795,-584],[-425,-141],[-909,7],[-436,-53],[-185,-57],[-201,-28],[-193,27],[-161,108],[-85,252],[106,252],[329,484],[41,245],[3,210],[33,203],[115,198],[16,27],[133,139],[586,389],[254,228],[130,93],[138,61],[450,86],[41,-35],[38,-16],[33,9],[27,43],[11,161],[-13,125],[-57,93],[-124,68],[-506,104],[-381,161],[-103,15],[-54,-30],[-129,-122],[-72,-40],[-52,-9],[-114,1],[-240,37],[-69,126],[14,33],[44,102],[197,61],[199,98],[-86,252],[-144,293],[31,225],[6,26],[2,27],[-2,27],[-6,25],[-5,3],[-5,4],[-2,5],[0,5],[13,166],[-4,140],[-92,708],[-36,127],[-118,233],[14,72],[97,110],[283,229],[54,93],[25,95],[-13,79],[-50,57],[-91,25],[22,98],[26,237],[30,95],[28,17],[97,32],[27,17],[53,155],[29,128],[87,390],[143,218],[192,121],[219,91],[225,124],[183,186],[102,68],[130,7],[13,-6]]],"transform":{"scale":[0.00013724040542639992,0.00013313242504250065],"translate":[34.20026944114147,31.21144895800009]}};
+  Datamap.prototype.psxTopo = {"type":"Topology","objects":{"psx":{"type":"GeometryCollection","geometries":[{"type":"Polygon","id":"PS.BTH","arcs":[[0,1,2,3,4,5]],"properties":{"name":"Bethlehem"}},{"type":"Polygon","id":"PS.DEB","arcs":[[6,7,8,9]],"properties":{"name":"Deir al-Balah"}},{"type":"Polygon","id":"PS.GZA","arcs":[[10,-10,11,12]],"properties":{"name":"Gaza"}},{"type":"Polygon","id":"PS.HBN","arcs":[[13,-2]],"properties":{"name":"Hebron"}},{"type":"Polygon","id":"PS.JEN","arcs":[[14,15,16,17]],"properties":{"name":"Jenin"}},{"type":"Polygon","id":"PS.JRH","arcs":[[18,19,20,21,22]],"properties":{"name":"Jericho"}},{"type":"Polygon","id":"PS.JEM","arcs":[[23,24,-6,4,-4,25,-22]],"properties":{"name":"Jerusalem"}},{"type":"Polygon","id":"PS.KYS","arcs":[[26,-8,27,28]],"properties":{"name":"Khan Younis"}},{"type":"Polygon","id":"PS.NBS","arcs":[[29,-15,30,31,32,33,-20]],"properties":{"name":"Nablus"}},{"type":"Polygon","id":"PS.NGZ","arcs":[[34,-13]],"properties":{"name":"North Gaza"}},{"type":"Polygon","id":"PS.QQA","arcs":[[35,36,-32,37]],"properties":{"name":"Qalqilya"}},{"type":"Polygon","id":"PS.RFH","arcs":[[38,-29]],"properties":{"name":"Rafah"}},{"type":"Polygon","id":"PS.RBH","arcs":[[-34,39,40,-24,-21]],"properties":{"name":"Ramallah"}},{"type":"Polygon","id":"PS.SLT","arcs":[[41,-40,-33,-37]],"properties":{"name":"Salfit"}},{"type":"Polygon","id":"PS.TBS","arcs":[[42,-16,-30,-19]],"properties":{"name":"Tubas"}},{"type":"Polygon","id":"PS.TKM","arcs":[[43,-38,-31,-18]],"properties":{"name":"Tulkarm"}}]}},"arcs":[[[7097,3906],[-90,-12],[-31,5],[-24,22],[-16,-3],[-36,-54],[-71,-43],[-14,12],[-3,-26],[-12,-7],[-13,-1],[-17,40],[-23,-3],[-49,-40],[-48,-102],[-24,-9],[-74,8],[-97,-105],[-55,-37],[-4,-40],[-120,-50],[-149,-98]],[[6127,3363],[12,-20],[-9,-30],[20,-9],[19,12],[2,24],[20,0],[4,-11],[12,26],[15,-6],[35,12],[18,-17],[16,1],[3,-13],[-12,-1],[16,-23],[53,33],[25,-1],[3,-34],[22,-18],[-3,-14],[30,2],[128,-43],[0,8],[34,7],[15,-39],[14,10],[13,-22],[31,8],[16,-21],[113,-2],[-1,-14],[27,17],[79,-10],[13,-14],[-16,-12],[24,-22],[43,-6],[-1,-31],[-65,-8],[1,-25],[-1,-1],[-25,13],[5,-6],[-29,1],[-4,20],[-8,-17],[-34,18],[-25,-17],[1,-25],[22,-29],[16,1],[9,-21],[54,-12],[-1,-12],[1,-1],[13,-36],[51,-36],[23,1],[-5,32],[57,-4],[-9,-10],[27,-12],[20,15],[21,-15],[5,35],[28,-24],[36,11],[40,-21],[20,4],[111,-85],[-1,-11],[60,-54],[92,-25],[-91,-161],[26,-37],[-2,-29],[75,-68],[1,-11],[-27,-7],[37,-59],[75,-67],[64,-12],[84,-71],[46,16],[26,-5],[182,-140],[26,-41],[18,-68],[36,-17],[-15,-31],[24,-35],[32,-12],[37,16],[108,-20],[166,-79]],[[8394,1796],[177,113],[112,92],[-7,44],[36,114],[-29,31],[12,12],[-3,89],[29,24],[-17,58],[23,33],[-6,40],[91,71],[4,16],[29,24],[9,32],[-23,60],[-45,62],[8,140],[14,16],[30,8],[-20,37],[35,43],[5,25],[22,18],[36,-3],[34,31],[-24,42],[4,44],[59,45],[-1,24],[20,38],[33,32],[-3,34],[38,49],[6,48],[-30,71],[52,117],[2,28],[63,59],[65,14],[88,91]],[[9322,3762],[-116,90],[-68,31],[-81,18],[-10,-16],[-43,-1],[-10,-18],[-39,-8],[-5,24],[-10,6],[-23,-11],[2,27],[-17,-6],[-22,19],[-39,-25],[-36,26],[-81,-14],[-46,14],[-45,-4],[-256,-85],[-57,13],[-35,30],[-60,12],[-77,-34],[-48,11],[11,-53],[-20,1],[28,-25],[-44,7],[-3,39],[-65,-55],[-114,33],[-44,-11],[-32,9],[-52,-17],[4,-29],[-26,-27],[-20,-1],[-25,21],[4,-13],[-60,-27],[-39,3],[-5,3],[-8,14],[-1,1]],[[7589,3734],[-1,0],[1,0]],[[7589,3734],[-4,5],[-7,-7],[-33,2],[-40,34],[-5,-9],[-26,2],[-2,-12],[-21,3],[2,-12],[-16,3],[-3,-18],[-10,1],[26,-9],[2,-1],[3,-3],[2,-2],[-14,5],[4,-16],[-14,13],[1,-13],[-9,11],[-7,-11],[-19,7],[3,-28],[-76,44],[1,19],[-26,22],[-14,-7],[-24,6],[-4,-22],[-17,-3],[-31,21],[-22,-3],[2,10],[-17,7],[61,17],[28,34],[-68,7],[-23,-27],[-11,6],[2,17],[-9,-16],[-34,-1],[1,18],[-20,5],[-26,40],[-3,18],[21,4],[4,11]],[[1138,1785],[-2,-2],[-5,-4],[-8,-6],[-3,-3],[-136,-148],[-107,-107],[-194,-171]],[[683,1344],[67,-44],[4,-27],[19,-22],[72,2],[58,-45],[34,46],[33,-18],[66,-84],[16,-8],[10,10],[17,-17],[65,-11]],[[1144,1126],[5,36],[41,52],[6,29],[91,79],[19,35],[48,49],[36,11],[142,107]],[[1532,1524],[0,4],[1,7],[0,4],[-3,0],[-28,9],[-3,1],[-40,10],[-1,2],[-1,5],[-2,7],[4,1],[9,1],[1,0],[2,1],[-4,10],[10,1],[6,1],[0,1],[0,1],[1,1],[-1,0],[0,1],[-2,8],[-9,-1],[-1,1],[0,1],[-1,0],[-4,-1],[-11,26],[0,2],[1,3],[1,1],[1,2],[-49,71],[16,12],[8,-3],[1,3],[-2,1],[-2,1],[-1,1],[-2,2],[-1,0],[2,2],[2,0],[1,1],[1,1],[3,1],[1,1],[1,1],[1,0],[0,1],[1,0],[1,1],[8,8],[-12,10],[-11,5],[-1,0],[-71,16],[-3,3],[-1,0],[-1,1],[-1,1],[-8,8],[-4,27],[-1,1],[0,1],[0,1],[-1,0],[0,1],[-1,1],[-1,1],[-1,1],[-1,0],[0,1],[-1,0],[-1,0],[0,1],[-1,0],[-1,0],[-1,0],[0,1],[-1,0],[-1,0],[-2,0],[-1,0],[-3,0],[-2,-2],[-2,-1],[-4,-2],[-2,1],[-1,0],[0,1],[-1,0],[-19,2],[-20,-1],[-1,0],[-1,0],[-1,0],[-2,0],[-5,0],[-13,0],[-1,0],[-1,0],[-1,0],[-1,0],[-41,-18],[-34,-7],[-17,-8],[-1,0],[-7,0]],[[1734,2429],[-143,-162],[-18,-13],[-20,3],[8,-13],[-48,-66],[-375,-393]],[[1532,1524],[44,42],[38,58],[67,28],[200,201],[35,14],[37,49],[207,157],[63,15]],[[2223,2088],[-32,26],[-15,8],[-9,4],[-1,1],[-1,1],[-3,1],[-1,1],[-1,0],[3,2],[-1,1],[-1,0],[-2,1],[-1,1],[-1,1],[-2,1],[-4,4],[-14,10],[-15,10],[-2,2],[-2,1],[-2,2],[-9,7],[-7,6],[-1,0],[-1,-3],[-2,-2],[-3,-4],[-2,-3],[-1,-2],[-9,-10],[-7,-10],[-1,0],[0,-1],[-5,5],[-6,5],[-8,7],[-9,9],[-8,8],[-6,6],[-7,6],[0,1],[-1,0],[0,1],[-1,0],[0,1],[-1,0],[-1,1],[-1,1],[-1,0],[-7,4],[-6,4],[-10,11],[-1,0],[-9,-5],[-8,-5],[-6,-3],[-2,-1],[-7,8],[-11,-3],[-12,-6],[-3,-2],[-2,0],[-9,18],[0,1],[6,8],[1,0],[-28,16],[-3,-2],[0,-1],[-1,0],[-1,-1],[-1,0],[-2,2],[-1,1],[-4,4],[-4,3],[-1,-1],[-1,0],[-5,4],[-2,2],[-1,0],[-1,1],[-1,0],[-1,1],[-4,3],[-4,3],[0,1],[-3,2],[-3,2],[-13,3],[3,1],[0,1],[1,1],[7,5],[26,10],[11,-3],[14,27],[-3,2],[-1,0],[-1,0],[-1,0],[-1,1],[-1,0],[-1,0],[-3,1],[-1,0],[-1,0],[-1,0],[-1,1],[-1,0],[0,1],[-1,0],[-1,1],[-1,1],[-1,1],[-10,8],[-1,1],[-19,14],[0,1],[-2,1],[-1,0],[0,1],[-2,1],[-6,4],[-1,1],[-3,3],[-1,0],[-1,1],[0,1],[-12,9],[-1,0],[-3,3],[-1,1],[-4,3],[-2,1],[-22,20],[-52,32],[-6,3],[-4,2]],[[6127,3363],[-138,-80],[-104,-36],[-21,1],[-99,-59],[-147,-166],[-32,-59],[-174,-183],[-37,-98],[-12,-116],[-17,-30],[-13,-83],[6,-161],[-13,-36],[28,-103],[-28,-121],[-105,-212],[-60,-71],[-50,-20],[14,-24],[-35,-44],[-35,-12],[-118,-227],[-48,-130],[6,-46],[41,-69],[22,-80],[144,-110],[7,-41],[51,-39],[54,-20],[163,40],[96,7],[34,21],[19,-18],[110,24],[30,-4],[17,18],[150,29],[427,2],[59,-4],[10,-15],[287,6],[126,-12],[132,38],[42,-21],[65,13],[43,-11],[28,20],[1,32],[12,2],[12,-16],[16,21],[18,7],[22,-10],[21,22],[81,16],[29,-23],[25,11],[26,-4],[22,30],[27,-4],[106,25],[159,129],[16,-2],[9,23],[152,115],[80,40],[48,52],[460,309]],[[6884,8287],[20,5],[4,-25],[41,-17],[12,8],[15,-23],[4,17],[15,4],[23,-50],[30,-8],[45,-34],[33,0],[69,42],[17,19],[66,-11],[14,9],[10,-24],[30,11],[36,-18],[21,5],[23,-34],[15,2],[9,-33],[10,18],[-5,26],[9,-1],[29,-36],[0,16],[12,-5],[23,18],[46,-17],[23,5],[33,-37],[16,12],[34,-19],[33,12],[51,-15],[25,22],[4,25],[12,-5],[35,18],[-4,22],[15,-4],[5,10],[-11,33],[74,-19],[56,-48],[50,-13],[12,-19],[86,-29]],[[8109,8102],[52,8],[-1,9],[23,9],[5,83],[34,-19],[45,63],[-17,8],[14,13],[-52,26],[-46,66],[6,9],[35,-3],[6,20],[-38,10],[15,12],[65,7],[-11,7],[-4,51],[22,5],[5,12],[-30,7],[16,63],[63,38],[88,-7],[32,20],[3,15],[-15,13],[61,3],[-16,26],[33,-6],[-9,23],[50,25],[-3,-41],[44,-39],[-28,-4],[0,-21],[35,-13],[42,32],[12,-3],[33,52],[1,57],[-15,25],[23,5],[18,-13],[17,9],[15,-5],[52,-46],[7,59],[-13,30],[78,-11],[1,-26],[69,99],[-31,72],[18,8]],[[8918,8944],[-60,41],[-9,25],[8,9],[-19,25],[10,8],[-15,2],[-25,55],[39,170],[28,18],[-94,158],[-13,53],[8,15],[-16,15],[5,19],[-24,61],[-131,28],[-39,34],[-103,53],[-162,18],[-84,-30],[-194,-40],[-161,-1],[-66,-36],[3,71],[-176,66],[-116,99],[-88,119],[-62,-33],[-10,-25],[-118,-42],[-25,-49],[-61,-65],[-47,5],[-29,-43],[-94,-74],[-26,-36],[-40,-9],[-77,-49],[-42,-1],[-8,-13],[15,-8],[-103,-72],[-92,-32],[-48,-32],[-35,21],[-73,-13],[-49,-56],[-25,-8],[-54,-47],[-20,-25],[8,-19]],[[6309,9274],[8,17],[30,-9],[27,9],[20,-19],[31,1],[7,-30],[-18,-20],[53,-9],[36,-55],[-16,-57],[-23,-26],[3,-35],[-37,9],[1,-32],[-23,-22],[-4,-25],[20,4],[9,28],[53,-20],[48,19],[127,25],[37,-10],[5,-9],[-15,-6],[20,-28],[-15,-47],[-40,-20],[-28,-34],[4,-13],[-29,-15],[35,-10],[-5,-10],[37,-39],[21,9],[100,3],[13,-27],[-79,-10],[-48,-55],[0,-1],[-34,-10],[4,-9],[-18,6],[-10,-21],[12,-2],[13,-33],[15,-4],[4,-31],[32,1],[-53,-27],[-7,-16],[-15,8],[12,-21],[-15,8],[-16,-16],[-23,1],[-5,-37],[41,-1],[-2,28],[31,-6],[5,21],[12,5],[53,-5],[7,-25],[24,-23],[68,-13],[-12,-30],[8,-5],[50,-21],[17,13],[35,-13],[-20,-4],[-25,-37],[-20,0],[1,-14],[30,-15],[8,-22],[-22,-9],[21,2],[16,-17],[-12,-24]],[[9968,7275],[-64,15],[-39,25],[-41,-13],[-35,10],[-53,-8],[-8,-15],[-33,-13],[6,-17],[-26,-14],[-2,-13],[-29,-8],[-15,-29],[-17,1],[-23,22],[-49,-28],[-92,33],[-47,45],[-27,6],[-32,-7],[-68,-70],[-28,0],[-43,-30],[-19,13]],[[9184,7180],[-27,-48],[-22,-14],[-61,3],[-52,25],[-18,30],[12,70],[-10,21],[-70,-14],[-4,-57],[31,-26],[8,-32],[-45,-24],[-2,-36],[-65,-16],[-12,-23],[-24,-15],[-7,-134],[-12,-5],[4,-34],[-13,-35],[-1,-91],[24,-30],[52,-31],[1,-22],[-65,-53],[-44,-12],[-36,19],[-6,45],[-60,-22],[-11,-42],[-70,-20],[-4,-12],[-1,-52],[37,-134],[27,-16],[29,-47],[19,-2],[64,-65],[91,-3],[27,-15],[3,-24],[44,-17],[3,-81]],[[8918,6089],[-8,-170],[16,-114],[24,-38],[-217,-29],[75,-29],[2,-87],[-22,-56],[-83,-74],[-59,18],[-33,3],[-5,-9],[38,3],[91,-64],[2,-23],[-25,-27],[25,-10],[-14,-4],[19,-18],[-17,-4],[19,-16],[-19,-25],[31,-16],[4,-19],[-52,-26],[-45,2],[36,-18],[71,-13],[-12,-24],[9,-23],[34,-30],[-1,-22],[35,-41],[-21,-6],[-14,-46],[-34,-11],[-19,-26],[-46,-9],[-14,-20],[0,-38],[43,-91],[-12,-43],[21,-15],[-9,-26],[19,-18],[-3,-77],[-26,-21],[-3,-26],[-29,-6],[-13,-14],[-75,4],[-19,11],[-19,-7],[-15,9],[-12,-8]],[[8537,4602],[-101,-149],[10,-8],[-9,-7],[19,-51],[42,4],[27,17],[106,-105],[-129,-22],[-18,-12],[18,-35],[21,5],[38,-34],[0,-15],[42,18],[15,-11],[-3,-17],[20,-12],[61,-7],[34,-29],[17,6],[24,-17],[20,3],[0,15],[18,9],[34,-9],[10,24],[63,6],[35,17],[62,-3],[39,31],[24,-7],[28,15],[57,-5],[38,-42],[46,-15],[31,-32],[19,-97],[50,-58],[51,-88]],[[9396,3885],[73,105],[17,69],[22,26],[110,-27],[43,12],[130,-32],[77,1],[24,21],[-7,17],[-29,17],[6,31],[-47,65],[-1,26],[26,64],[-40,67],[-33,30],[8,30],[-10,11],[16,17],[-20,2],[6,16],[-19,7],[25,5],[-12,37],[33,-5],[5,14],[17,1],[-9,42],[-17,11],[13,6],[-3,14],[19,21],[-19,3],[5,30],[-13,16],[24,7],[-35,18],[19,8],[-3,10],[-30,2],[11,24],[-11,1],[1,-12],[-17,8],[12,22],[-36,16],[21,7],[-13,13],[13,-2],[4,14],[17,-7],[-4,26],[13,-11],[2,23],[23,-7],[-13,21],[25,-4],[-16,9],[7,8],[-15,21],[30,16],[-43,15],[-33,-7],[0,41],[-48,23],[22,21],[-30,10],[-10,28],[24,9],[6,15],[-27,-8],[15,28],[-34,21],[-27,66],[27,64],[-5,48],[19,7],[17,-18],[5,25],[19,2],[-11,-12],[11,-8],[28,11],[-17,11],[-6,37],[47,-6],[-24,23],[9,9],[29,-13],[-12,17],[20,10],[-1,14],[-31,6],[30,26],[-30,12],[23,9],[-22,9],[17,3],[-11,13],[14,14],[-15,-4],[-20,30],[16,-10],[1,15],[20,5],[-10,3],[3,17],[-15,0],[-7,11],[5,16],[32,13],[-26,23],[18,6],[-2,13],[26,11],[0,12],[-7,15],[-20,-9],[-18,27],[-4,53],[-8,5],[-17,-16],[-21,37],[20,28],[-11,24],[39,24],[5,18],[-20,-11],[1,20],[-25,-14],[11,25],[-17,-20],[-15,26],[-5,-21],[-21,9],[-15,-6],[11,31],[-6,5],[-11,-11],[-20,17],[21,4],[-9,18],[24,-1],[-8,8],[13,20],[-16,-2],[-7,19],[-24,7],[45,20],[-1,19],[-48,-1],[1,10],[17,-2],[-1,10],[-31,-1],[15,22],[-10,12],[21,26],[-15,-2],[-16,14],[19,2],[2,25],[-16,-6],[-13,11],[27,45],[-23,34],[19,16],[-11,20],[21,-6],[6,-19],[11,23],[31,-3],[-7,62],[24,13],[-11,-4],[-9,16],[38,14],[-32,0],[-3,8],[22,4],[-22,9],[20,8],[-18,10],[-1,18],[23,-4],[7,-16],[9,4],[-1,57],[27,-13],[-14,26],[32,8],[-16,12],[3,11],[23,-18],[28,5],[-26,7],[23,17],[-22,7],[20,23],[-14,-1],[-6,16],[-40,-4],[23,16],[-12,22],[7,16],[-20,23],[-40,7],[24,14],[-23,41],[48,19],[34,-1],[8,20],[-11,13],[37,56],[-13,22],[22,-7],[13,18],[-26,14],[23,6],[4,22],[-13,-18],[-15,13],[-12,-22],[-9,3],[10,9],[-21,3],[6,31],[25,-14],[22,21],[-5,13],[-13,-13],[-26,9],[-6,29],[27,3],[-18,11],[22,6],[14,-11],[16,24],[30,-18],[-3,23],[17,-14],[12,5],[-6,24],[30,38],[-23,-2],[-28,18],[-12,-18],[-11,29],[14,5],[16,-9],[1,23],[-20,9],[-21,-8],[-15,30],[25,6],[8,-17],[33,22],[-8,21],[-26,-18],[-6,18],[18,21],[-25,18],[18,8],[20,-23],[18,0],[-7,28],[-35,9],[34,9],[16,-10],[13,25],[-16,4],[-10,40],[23,-1],[1,21],[18,16],[40,-3],[-1,13]],[[8537,4602],[-41,26],[-4,15],[-34,6],[-10,12],[-15,-5],[-11,-37],[-23,31],[-72,-21],[-12,-32],[-62,21],[-26,97],[-34,7],[-32,51],[-63,45],[-123,6],[-44,77],[-21,7],[-3,20],[1,0],[-1,18],[-85,-27],[-8,31],[-35,-5],[-15,18],[-60,11],[-29,-57],[-6,-41],[-11,-5],[-55,29],[6,22],[-19,19],[-2,30],[-16,11],[-64,-8],[-79,11],[3,-8],[-15,-4],[-18,14],[-3,-29],[-87,-11],[-19,1],[-23,32],[-30,-7],[-64,12],[-19,-55],[-37,-20],[6,-43],[30,-46],[-11,8],[-3,-19],[-23,-13],[-36,26],[-61,18],[-36,-17],[-11,-19],[-41,-7],[-9,16],[-13,-4],[6,25],[-55,17],[-9,-17],[-29,-13],[-41,12],[-19,-6],[-18,13],[-134,-2],[-36,19],[-55,-1],[-60,28],[6,10],[-36,-4],[-14,14],[0,-108],[-63,-115],[-32,8],[-12,-9],[-36,35],[-33,2],[24,-3],[21,-43]],[[6284,4672],[214,-113],[14,-11],[-21,2],[62,-39],[71,-8],[7,18],[21,3],[142,-85],[30,-5],[-2,13],[22,-21],[123,-28],[110,-4],[147,14],[93,-34],[52,-3],[47,-28],[29,-128],[-14,-55],[34,-42],[-12,-17],[-21,15],[3,-28],[19,-5],[-1,-50],[-5,-26],[-20,4],[-4,-72],[-10,-12],[8,-10],[24,1],[-33,-73],[-20,-8],[-30,14],[-22,39],[20,28],[-56,28],[-55,-13],[-34,29],[-25,-29],[-20,-3],[-27,12],[-47,-36]],[[9322,3762],[24,58],[50,65]],[[791,249],[80,77],[46,81],[175,87],[27,48],[26,82],[-62,409],[14,55],[34,7],[13,31]],[[683,1344],[-86,-64],[-168,-165],[-256,-222]],[[173,893],[15,-9],[26,-28],[36,-10],[-6,-7],[15,-20],[29,28],[42,-48],[46,-80],[7,11],[10,-5],[7,41],[25,-11],[42,-52],[20,-8],[-16,-44],[-39,-51],[43,-41],[21,-13],[2,19],[80,-45],[60,-2],[75,15],[-14,-55],[16,-10],[28,-105],[4,-9],[31,13],[39,-67],[-35,-25],[9,-26]],[[9184,7180],[48,97],[10,75],[-12,33],[-260,156],[-39,51],[-21,-4],[-24,47],[18,43],[-94,50],[-136,26],[-35,24],[-95,107],[-12,-11],[-37,-42],[-20,-2],[4,-14],[-59,-23],[-27,28],[-36,5],[-85,51],[-42,10],[9,14],[-25,19],[6,13],[-44,15],[-36,45],[2,43],[-43,-1],[-20,18],[-23,-2],[18,17],[15,-5],[5,26],[31,1],[-16,12]],[[6884,8287],[-78,-4],[4,-13],[24,-4],[14,8],[-6,5],[27,4],[-4,-41],[-43,-15],[-4,-37],[-22,-4],[-9,-28],[9,-5],[20,22],[-3,-45],[39,1],[-5,-10],[19,-13],[18,3],[15,-11],[-10,-13],[7,-12],[14,-5],[21,6],[0,11],[34,-2],[-34,-46],[36,4],[-5,-31],[20,-9],[-1,-12],[-13,5],[3,-8],[31,-17],[-25,-22],[-6,-23],[-22,4],[15,-13],[43,3],[1,-15],[-13,5],[-23,-15],[11,-10],[-31,-6],[-28,20],[-13,-4],[-3,10],[-19,-3],[-11,-15],[-15,16],[-15,-46],[12,-13],[9,14],[15,-6],[-13,-16],[4,-18],[21,-11],[-1,-28],[28,3],[-15,10],[13,12],[32,-14],[8,-33]],[[6961,7757],[28,-19],[-8,-21],[-37,-15],[6,-48],[20,-9],[22,13],[42,-7],[28,-38],[37,13],[4,-17],[-27,4],[-17,-10],[15,-6],[-4,-8],[19,-4],[15,13],[32,-15],[-9,-17],[15,-18],[5,7],[0,14],[18,6],[-2,14],[16,2],[0,-1],[1,0],[0,-10],[12,-4],[6,11],[7,-12],[-16,-54],[-22,-24],[-25,38],[17,-48],[-26,-14],[-11,4],[-18,-32],[4,-24],[34,-33],[-12,1],[-17,25],[21,-42],[-5,-8],[-15,27],[-17,-10],[11,-8],[-12,-10],[8,-22],[-14,-13],[9,-14],[-34,-55],[20,-12],[-33,-23],[2,-29],[-35,-48]],[[7019,7147],[5,-18],[32,13],[23,-13],[-2,-62],[-36,14],[-1,-27],[-35,-17],[7,-29],[-23,-3],[-9,11],[-15,-21],[-43,-2],[-34,-66],[17,4],[23,-31],[21,7],[-2,-12],[27,-14],[-5,-12],[22,3],[-4,-23],[17,-12],[55,9],[-2,-10],[59,-39],[5,-16],[90,0],[20,-25],[121,-2],[20,-35],[23,-14],[-27,-13],[32,-16],[47,50],[18,-5],[8,18],[22,9],[-4,28],[170,5],[4,-29],[41,-21],[-10,-24],[-29,-6],[-38,-27],[1,-48],[-10,-7],[-20,-2],[-15,17],[19,24],[-13,8],[-37,-37],[-23,5],[13,-28],[-13,-24],[4,-15],[-30,-12],[10,-17],[-44,-23],[-12,9],[3,-14],[-32,-8],[2,-17],[-20,1],[-49,-23],[-5,-16],[14,-9],[5,-22],[-52,2],[-43,-23],[-3,-15],[-52,-3],[32,-27],[-8,-26],[-39,-14]],[[7212,6310],[22,-5],[13,11],[3,-23],[23,-2],[-3,-22],[22,-19],[4,26],[-12,-1],[0,9],[18,9],[-3,11],[68,-7],[3,16],[24,16],[-11,-18],[10,-4],[19,31],[-11,8],[18,8],[13,-26],[51,-7],[-4,-14],[23,19],[9,-14],[-15,-15],[18,9],[9,-7],[-40,-17],[11,-8],[-3,-24],[21,5],[22,-17],[-10,14],[54,23],[-16,9],[52,-14],[3,-12],[35,3],[-12,16],[39,7],[5,10],[41,-27],[9,11],[21,-7],[3,9],[16,-1],[-27,15],[51,23],[5,-26],[24,-17],[-2,-30],[25,-7],[44,-44],[38,-2],[16,53],[19,6],[87,-24],[174,-81],[58,-1],[13,3],[-2,13],[35,8],[79,-13],[18,15],[62,0],[47,-12],[0,-31],[49,10],[117,-21],[22,13],[46,4],[55,-11],[26,-22],[28,6],[37,-17]],[[2223,2088],[40,8],[47,31],[116,44],[25,29],[32,14],[0,28],[56,60],[28,28],[8,58],[-562,402],[-179,-240],[-80,-100],[-11,-11],[-5,-6],[-3,-2],[0,-1],[-1,-1]],[[5820,7547],[-117,-105],[-17,-38],[-32,-6],[-13,-18],[-38,-10],[-19,-19],[-87,-5],[-45,-69],[17,-113],[36,-18],[-2,-33],[22,1],[25,-19],[50,-56],[-22,-51],[37,-27],[53,-2],[28,-47],[-9,-27],[-11,-3],[8,-31],[-23,-30],[-2,-34],[25,-47],[1,-33],[20,-17],[16,-41]],[[5721,6649],[43,16],[12,19],[25,7],[24,-7],[31,19],[30,-19],[55,-12],[0,18],[32,25],[19,40],[-10,10],[9,-1],[17,39],[49,-33],[85,2],[43,15],[5,18],[-27,21],[22,14],[-24,10],[23,48],[34,31],[55,-8],[-3,41],[40,17],[-3,115],[27,34],[-16,19],[28,3],[12,18],[11,-8],[31,28],[16,-9],[1,-30],[44,-5],[35,10],[3,13],[23,-13],[-13,-59],[37,-14],[-18,-16],[9,-8],[28,5],[7,-24],[23,11],[3,-9],[22,-1],[28,21],[42,6],[9,-17],[98,66],[29,3],[21,-14],[56,31],[42,-30],[41,30],[22,-11],[11,23]],[[6961,7757],[-23,-27],[-47,-9],[-46,-63],[-52,22],[-56,-12],[18,-15],[-1,-20],[-43,-2],[-16,19],[-26,-11],[-22,-29],[-38,-9],[6,-31],[-28,-7],[-7,-15],[-79,-26],[-37,20],[8,-40],[28,-8],[18,-39],[-27,-1],[-26,26],[-6,-20],[-30,5],[12,-21],[-26,-4],[-105,-85],[5,-26],[-9,-7],[-53,29],[-24,-9],[-26,28],[-65,29],[-4,26],[-43,14],[-16,-10],[-23,17],[-96,14],[-9,46],[18,-5],[10,16],[-4,10],[-13,-2],[12,39],[-98,6],[28,-11],[-2,-10],[-54,16],[-7,-21],[-17,3]],[[173,893],[-173,-145],[124,-202],[34,-8],[191,-538],[107,36],[94,92],[182,80],[59,41]],[[7212,6310],[-22,-8],[-10,-26],[13,-10],[-24,-16],[-19,7],[-8,22],[-38,-5],[-18,-14],[-19,17],[-12,38],[-35,-7],[-2,20],[-23,10],[51,19],[-14,8],[-51,-18],[-9,12],[-19,-1],[-27,-13],[3,-8],[-40,-5],[-19,-27],[-24,6],[15,10],[-22,9],[-50,-14],[-39,24],[6,12],[-102,5],[-46,-11],[-10,-20],[-28,0],[-10,-34],[-31,-18],[-76,19],[-2,-9],[-6,6],[-21,-10],[-20,10],[-40,-13],[-25,8],[10,-21],[-16,0],[-1,-16],[18,-17],[-20,-21],[-14,-5],[-9,13],[-45,-10],[-24,-24],[-30,11],[20,9],[-17,5],[-14,27],[-24,-4],[-5,-25],[-44,10],[-35,-11],[7,30],[-33,12],[-46,-25],[-56,24],[-26,-1],[-45,30],[-14,-19],[-24,-1],[-30,29],[-20,47],[-12,-11],[-36,14],[-22,-15]],[[5732,6320],[23,-55],[-21,-31],[26,6],[3,-10],[25,-85],[17,-148],[-43,-24],[0,-171],[-19,-95],[-13,-4],[11,-20],[-8,-35],[-16,-16],[-51,-13],[1,-22],[-44,2],[19,-49],[58,-89],[46,-155],[75,-57],[102,-23],[14,-19],[32,-182],[-24,-46],[24,-38],[-3,-82],[-153,6],[-20,-41],[-48,13],[-5,-24],[-22,-9],[-18,-31],[-39,5],[-27,35],[-15,-5],[-10,-25],[4,-35],[-99,61],[-30,-6],[-1,-18],[13,-22],[25,-13],[25,-49],[58,-54],[35,-10],[6,-22],[20,5],[37,-22],[1,-25],[22,-9],[11,6],[14,-23],[20,9],[15,27],[87,7],[47,-21],[48,1],[20,-16],[18,23],[-7,-22],[25,3],[-10,-17],[20,-3],[-10,-27],[9,-19],[56,38],[86,189],[110,-47]],[[5721,6649],[-27,-16],[4,-21],[-36,-14],[-3,-39],[-21,-42],[8,-7],[20,6],[66,-196]],[[9968,7275],[1,10],[24,9],[-21,20],[-4,31],[-34,-17],[-15,3],[25,47],[-20,20],[11,18],[14,-17],[24,20],[26,-4],[-18,47],[-20,-8],[-26,21],[23,16],[29,-7],[9,8],[-8,13],[-27,3],[11,68],[-18,6],[-4,-18],[-20,-3],[-15,41],[-22,8],[-8,18],[42,0],[-2,34],[33,-28],[9,9],[-18,10],[36,21],[-19,16],[-9,32],[-38,11],[17,80],[-35,19],[-16,61],[58,24],[-4,26],[14,45],[-37,76],[-56,26],[42,33],[-9,2],[7,16],[28,31],[-27,63],[-53,29],[16,30],[-3,26],[19,18],[-26,90],[42,36],[-34,47],[14,18],[-23,19],[5,30],[-11,25],[39,-10],[-3,-33],[14,-6],[31,69],[2,33],[-28,43],[16,40],[-65,34],[-91,-13],[-81,43],[-264,57],[-115,73],[-192,18],[-35,-19],[-25,3],[-7,-25],[-23,-12],[-58,16],[-44,30]],[[6309,9274],[-57,-48],[0,-48],[-37,-48],[-6,-54],[-24,-47],[4,-26],[-28,-30],[13,-30],[-9,-68],[-101,-168],[11,-22],[54,-9],[19,-71],[-7,-23],[-18,-33],[-29,-5],[-21,-26],[5,-36],[-12,-15],[-37,-19],[-51,6],[-11,-50],[-50,5],[-30,-19],[-9,-244],[-11,-20],[-4,27],[-18,-101],[20,-11],[-32,-82],[29,-13],[23,6],[30,-8],[25,-35],[18,-6],[35,-63],[-15,-38],[-17,-8],[-17,-30],[0,-49],[-35,-48],[7,-61],[-18,-6],[-26,15],[-52,-68]]],"transform":{"scale":[0.00013548670487048754,0.00013278943564355402],"translate":[34.2186651850001,31.2243847880001]}};
   Datamap.prototype.gbrTopo = '__GBR__';
   Datamap.prototype.geoTopo = '__GEO__';
   Datamap.prototype.ggyTopo = '__GGY__';
@@ -932,12 +1075,12 @@
                 Utilities
   ***************************************/
 
-  //convert lat/lng coords to X / Y coords
+  // Convert lat/lng coords to X / Y coords
   Datamap.prototype.latLngToXY = function(lat, lng) {
      return this.projection([lng, lat]);
   };
 
-  //add <g> layer to root SVG
+  // Add <g> layer to root SVG
   Datamap.prototype.addLayer = function( className, id, first ) {
     var layer;
     if ( first ) {
@@ -950,8 +1093,19 @@
       .attr('class', className || '');
   };
 
-  Datamap.prototype.updateChoropleth = function(data) {
+  Datamap.prototype.updateChoropleth = function(data, options) {
     var svg = this.svg;
+    var that = this;
+
+    // When options.reset = true, reset all the fill colors to the defaultFill and kill all data-info
+    if ( options && options.reset === true ) {
+      svg.selectAll('.datamaps-subunit')
+        .attr('data-info', function() {
+           return "{}"
+        })
+        .transition().style('fill', this.options.fills.defaultFill)
+    }
+
     for ( var subunit in data ) {
       if ( data.hasOwnProperty(subunit) ) {
         var color;
@@ -965,10 +1119,13 @@
         else if ( typeof subunitData.color === "string" ) {
           color = subunitData.color;
         }
+        else if ( typeof subunitData.fillColor === "string" ) {
+          color = subunitData.fillColor;
+        }
         else {
           color = this.options.fills[ subunitData.fillKey ];
         }
-        //if it's an object, overriding the previous data
+        // If it's an object, overriding the previous data
         if ( subunitData === Object(subunitData) ) {
           this.options.data[subunit] = defaults(subunitData, this.options.data[subunit] || {});
           var geo = this.svg.select('.' + subunit).attr('data-info', JSON.stringify(this.options.data[subunit]));
@@ -1018,7 +1175,7 @@
 
         options = defaults(options || {}, self.options[name + 'Config']);
 
-        //add a single layer, reuse the old layer
+        // Add a single layer, reuse the old layer
         if ( !createNewLayer && this.options[name + 'Layer'] ) {
           layer = this.options[name + 'Layer'];
           options = options || this.options[name + 'Options'];
@@ -1036,7 +1193,7 @@
     }
   };
 
-  // expose library
+  // Expose library
   if (typeof exports === 'object') {
     d3 = require('d3');
     topojson = require('topojson');
